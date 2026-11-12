@@ -47,8 +47,11 @@ def test_checkout_validates_delivery_step(cart):
     ui.el("checkout-step-1-active")
     ui.tap("checkout-continue-button")
     assert ui.value("checkout-delivery-date-error") == "Select a delivery date"
-    assert ui.value("checkout-slot-error") == "Select a delivery slot"
-    assert not ui.el("checkout-slot-evening").is_enabled()
+    # The delivery options can extend below the fixed footer on a denser emulator.
+    slot_error = ui.scroll_to("checkout-slot-error", "checkout-scroll")
+    assert slot_error.text == "Select a delivery slot"
+    evening = ui.scroll_to("checkout-slot-evening", "checkout-scroll", direction="down")
+    assert not evening.is_enabled()
 
 
 def test_checkout_back_prompts_to_stay(cart):
