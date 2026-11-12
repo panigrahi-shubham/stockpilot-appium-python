@@ -1,0 +1,83 @@
+name: StockPilot Appium Android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Android suite
+        type: choice
+        options: [smoke, regression]
+        default: smoke
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appium-${{ github.workflow }}-${{ github.ref }}-${{ inputs.suite || 'smoke' }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android API 35
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TEST_SUITE: ${{ inputs.suite || 'smoke' }}
+      APK_URL: https://github.com/panigrahi-shubham/stockpilot-android/releases/download/stockpilot-v2.5.0-vortex/StockPilot-2.5.0-Vortex-QA.apk
+      APK_SHA256: b5d71b7689fa01e46c43c6d41e36ef39fadef9fa7816e8dff0be6fb54985d6e5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.14'
+          cache: pip
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - name: Install pinned test dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest --collect-only -q
+          npm install --global appium@3.9.0
+          appium driver install uiautomator2@7.6.2
+      - name: Fetch and verify the existing release APK
+        run: |
+          mkdir -p artifacts
+          apk="$RUNNER_TEMP/stockpilot-release.apk"
+          curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+            --output "$apk" "$APK_URL"
+          printf '%s  %s\n' "$APK_SHA256" "$apk" | sha256sum --check
+          echo "STOCKPILOT_CI_APK=$apk" >> "$GITHUB_ENV"
+      - name: Enable hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run Appium tests on Android
+        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 3072M
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+            -skin 720x1440 -dpi-device 320 -feature -Vulkan
+          disable-animations: true
+          enable-hw-keyboard: true
+          script: bash .github/scripts/run-appium.sh
+      - name: Upload pytest reports and Appium diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: appium-android-${{ inputs.suite || 'smoke' }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14

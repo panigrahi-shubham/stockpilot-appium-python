@@ -1,0 +1,12 @@
+.venv/
+.venv-*/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+artifacts/
+vortex-artifacts/
+.env
+.env.*
+*.apk
+*.aab
+*.log
